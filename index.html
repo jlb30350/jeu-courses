@@ -13,18 +13,53 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            min-height: 100dvh;
             color: white;
             font-family: sans-serif;
             flex-direction: column;
             touch-action: none;
             user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+            padding: 8px;
+        }
+
+        /* Mode plein écran de repli quand requestFullscreen() est bloqué ou non supporté sur mobile */
+        body.fullscreen-jeu {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100dvh;
+            min-height: 100dvh;
+            margin: 0;
+            padding: 8px;
+            background: #181818;
+            z-index: 9999;
+            justify-content: space-between;
+        }
+
+        .barre-hud {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 95vw;
+            max-width: 800px;
+            margin-bottom: 10px;
+            font-size: 18px;
+            gap: 10px;
         }
 
         canvas {
             border: 3px solid #fff;
             background: #4a7c59;
             max-width: 95vw;
+            max-height: 62dvh;
+            width: auto;
             height: auto;
+        }
+
+        body.fullscreen-jeu canvas {
+            max-height: 68dvh;
         }
 
         .controles-mobiles {
@@ -32,7 +67,7 @@
             justify-content: space-between;
             width: 95vw;
             max-width: 800px;
-            margin-top: 15px;
+            margin-top: 12px;
             gap: 10px;
         }
 
@@ -51,31 +86,46 @@
             font-weight: bold;
             cursor: pointer;
             touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         button:active {
             background: #e63946;
         }
+
+        #btn-fullscreen {
+            padding: 8px 14px;
+            font-size: 14px;
+            border-radius: 8px;
+        }
     </style>
 </head>
 
 <body>
-    <div style="margin-bottom: 10px; font-size: 18px;">Temps : <span id="chrono">0.0</span> s</div>
+    <div class="barre-hud">
+        <div>Temps : <span id="chrono">0.0</span> s</div>
+        <button type="button" id="btn-fullscreen">Plein écran</button>
+    </div>
+
     <canvas id="jeu" width="800" height="600"></canvas>
+
     <div class="controles-mobiles">
         <div class="groupe-boutons">
-            <button id="btn-gauche">◀</button>
-            <button id="btn-droite">▶</button>
+            <button type="button" id="btn-gauche">◀</button>
+            <button type="button" id="btn-droite">▶</button>
         </div>
         <div class="groupe-boutons">
-            <button id="btn-bas">Frein</button>
-            <button id="btn-haut">Gaz</button>
+            <button type="button" id="btn-bas">Frein</button>
+            <button type="button" id="btn-haut">Gaz</button>
         </div>
     </div>
+
     <script>
         const canvas = document.getElementById("jeu");
         const ctx = canvas.getContext("2d");
         const affichageChrono = document.getElementById("chrono");
+        const btnFullscreen = document.getElementById("btn-fullscreen");
 
         const vehicule = {
             x: 400,
@@ -91,6 +141,11 @@
         const touches = {};
         window.addEventListener("keydown", (e) => touches[e.key] = true);
         window.addEventListener("keyup", (e) => touches[e.key] = false);
+        window.addEventListener("blur", () => {
+            for (const cle in touches) {
+                touches[cle] = false;
+            }
+        });
 
         function lierBoutonTactile(idBouton, nomTouche) {
             const bouton = document.getElementById(idBouton);
@@ -99,6 +154,7 @@
                 touches[nomTouche] = true;
             });
             bouton.addEventListener("pointerup", () => touches[nomTouche] = false);
+            bouton.addEventListener("pointercancel", () => touches[nomTouche] = false);
             bouton.addEventListener("pointerleave", () => touches[nomTouche] = false);
         }
 
@@ -106,6 +162,57 @@
         lierBoutonTactile("btn-droite", "ArrowRight");
         lierBoutonTactile("btn-haut", "ArrowUp");
         lierBoutonTactile("btn-bas", "ArrowDown");
+
+        function estEnPleinEcran() {
+            return Boolean(
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.body.classList.contains("fullscreen-jeu")
+            );
+        }
+
+        function mettreAJourLibelleFullscreen() {
+            if (!btnFullscreen) return;
+            btnFullscreen.textContent = estEnPleinEcran() ? "Quitter plein écran" : "Plein écran";
+        }
+
+        async function basculerPleinEcran() {
+            const cible = document.documentElement;
+            const requestFn = cible.requestFullscreen || cible.webkitRequestFullscreen;
+            const exitFn = document.exitFullscreen || document.webkitExitFullscreen;
+            const natifActif = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+
+            try {
+                if (!natifActif && requestFn) {
+                    await requestFn.call(cible);
+                    document.body.classList.add("fullscreen-jeu");
+                    mettreAJourLibelleFullscreen();
+                    return;
+                }
+                if (natifActif && exitFn) {
+                    await exitFn.call(document);
+                    document.body.classList.remove("fullscreen-jeu");
+                    mettreAJourLibelleFullscreen();
+                    return;
+                }
+            } catch (err) {
+                // Repli automatique sur l'affichage plein écran adapté au mobile (ex. iOS / navigateurs restrictifs)
+            }
+
+            document.body.classList.toggle("fullscreen-jeu");
+            mettreAJourLibelleFullscreen();
+        }
+
+        if (btnFullscreen) {
+            btnFullscreen.addEventListener("click", basculerPleinEcran);
+        }
+
+        document.addEventListener("fullscreenchange", () => {
+            if (!document.fullscreenElement) {
+                document.body.classList.remove("fullscreen-jeu");
+            }
+            mettreAJourLibelleFullscreen();
+        });
 
         let debutTemps = Date.now();
 
