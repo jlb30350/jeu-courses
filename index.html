@@ -46,13 +46,21 @@
 
         .barre-hud {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
             width: 100%;
             max-width: 960px;
-            font-size: 16px;
-            gap: 10px;
+            font-size: 15px;
+            gap: 8px 14px;
             flex-shrink: 0;
+        }
+
+        .stats-hud {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
         }
 
         .actions-hud {
@@ -81,6 +89,11 @@
             height: auto;
             aspect-ratio: 4 / 3;
             object-fit: contain;
+            transition: border-color 0.15s ease;
+        }
+
+        canvas.hors-piste {
+            border-color: #f4a261;
         }
 
         .controles-mobiles {
@@ -123,6 +136,13 @@
             border-radius: 8px;
         }
 
+        /* Masquer les manettes tactiles sur grand écran PC sans pointeur grossier */
+        @media (min-width: 901px) and (hover: hover) and (pointer: fine) {
+            .controles-mobiles {
+                display: none;
+            }
+        }
+
         @media (orientation: portrait) {
             .zone-circuit {
                 flex: 0 1 auto;
@@ -132,7 +152,7 @@
             canvas {
                 width: 92vw;
                 max-width: 540px;
-                max-height: 46dvh;
+                max-height: 45dvh;
                 height: auto;
                 aspect-ratio: 4 / 3;
             }
@@ -146,7 +166,7 @@
             }
 
             .barre-hud {
-                font-size: 14px;
+                font-size: 13px;
             }
 
             button {
@@ -165,7 +185,11 @@
 
 <body>
     <div class="barre-hud">
-        <div>Temps : <span id="chrono">0.0</span> s</div>
+        <div class="stats-hud">
+            <div>Temps : <span id="chrono">0.0</span> s</div>
+            <div>Tour : <span id="tour">0</span></div>
+            <div>Record : <span id="record">--.-</span> s</div>
+        </div>
         <div class="actions-hud">
             <button type="button" id="btn-reset" class="btn-hud">Recommencer</button>
             <button type="button" id="btn-fullscreen" class="btn-hud">Plein écran</button>
@@ -191,8 +215,19 @@
         const canvas = document.getElementById("jeu");
         const ctx = canvas.getContext("2d");
         const affichageChrono = document.getElementById("chrono");
+        const affichageTour = document.getElementById("tour");
+        const affichageRecord = document.getElementById("record");
         const btnFullscreen = document.getElementById("btn-fullscreen");
         const btnReset = document.getElementById("btn-reset");
+
+        const CLE_RECORD = "prototype_course_meilleur_tour_v1";
+        let meilleurTour = parseFloat(localStorage.getItem(CLE_RECORD));
+        if (Number.isNaN(meilleurTour)) meilleurTour = null;
+
+        function mettreAJourAffichageRecord() {
+            affichageRecord.textContent = meilleurTour !== null ? meilleurTour.toFixed(1) : "--.-";
+        }
+        mettreAJourAffichageRecord();
 
         const vehicule = {
             x: 400,
@@ -206,14 +241,23 @@
         };
 
         let debutTemps = Date.now();
+        let debutTourTemps = Date.now();
+        let toursCompletes = 0;
+        let aPasseMoitieHaute = false;
+        let precedentX = vehicule.x;
 
         function reinitialiserCourse() {
             vehicule.x = 400;
             vehicule.y = 500;
             vehicule.angle = 0;
             vehicule.vitesse = 0;
+            precedentX = vehicule.x;
+            toursCompletes = 0;
+            aPasseMoitieHaute = false;
             debutTemps = Date.now();
+            debutTourTemps = Date.now();
             affichageChrono.textContent = "0.0";
+            affichageTour.textContent = "0";
         }
 
         if (btnReset) {
@@ -317,6 +361,34 @@
             return ext <= 1 && int >= 1;
         }
 
+        function verifierPassageLigne() {
+            if (vehicule.y < 230) {
+                aPasseMoitieHaute = true;
+            }
+
+            // Ligne d'arrivée située en bas au centre : x = 400, y entre 420 et 540
+            const dansZoneLigneY = vehicule.y >= 420 && vehicule.y <= 540;
+            const franchitLigne = (precedentX < 400 && vehicule.x >= 400) || (precedentX > 400 && vehicule.x <= 400);
+
+            if (aPasseMoitieHaute && dansZoneLigneY && franchitLigne) {
+                const maintenant = Date.now();
+                const dureeTour = (maintenant - debutTourTemps) / 1000;
+                toursCompletes += 1;
+                affichageTour.textContent = String(toursCompletes);
+
+                if (dureeTour > 1 && (meilleurTour === null || dureeTour < meilleurTour)) {
+                    meilleurTour = dureeTour;
+                    localStorage.setItem(CLE_RECORD, meilleurTour.toFixed(1));
+                    mettreAJourAffichageRecord();
+                }
+
+                debutTourTemps = maintenant;
+                aPasseMoitieHaute = false;
+            }
+
+            precedentX = vehicule.x;
+        }
+
         function boucleJeu() {
             if (touches["ArrowUp"]) vehicule.vitesse += vehicule.acceleration;
             if (touches["ArrowDown"]) vehicule.vitesse -= vehicule.acceleration;
@@ -328,7 +400,8 @@
             }
 
             vehicule.vitesse *= vehicule.friction;
-            const limiteVitesse = estSurPiste(vehicule.x, vehicule.y) ? vehicule.vitesseMax : 2;
+            const surPiste = estSurPiste(vehicule.x, vehicule.y);
+            const limiteVitesse = surPiste ? vehicule.vitesseMax : 2;
             if (vehicule.vitesse > limiteVitesse) vehicule.vitesse = limiteVitesse;
 
             vehicule.x += Math.cos(vehicule.angle) * vehicule.vitesse;
@@ -336,6 +409,9 @@
 
             vehicule.x = Math.max(15, Math.min(canvas.width - 15, vehicule.x));
             vehicule.y = Math.max(15, Math.min(canvas.height - 15, vehicule.y));
+
+            verifierPassageLigne();
+            canvas.classList.toggle("hors-piste", !surPiste);
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             dessinerCircuit();
