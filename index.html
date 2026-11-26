@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Prototype Course</title>
+    <style>
+        body {
+            margin: 0;
+            background: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: white;
+            font-family: sans-serif;
+            flex-direction: column;
+            touch-action: none;
+            user-select: none;
+        }
+
+        canvas {
+            border: 3px solid #fff;
+            background: #4a7c59;
+            max-width: 95vw;
+            height: auto;
+        }
+
+        .controles-mobiles {
+            display: flex;
+            justify-content: space-between;
+            width: 95vw;
+            max-width: 800px;
+            margin-top: 15px;
+            gap: 10px;
+        }
+
+        .groupe-boutons {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            background: #3a3a3a;
+            color: white;
+            border: 2px solid #fff;
+            border-radius: 12px;
+            padding: 18px 24px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+
+        button:active {
+            background: #e63946;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="margin-bottom: 10px; font-size: 18px;">Temps : <span id="chrono">0.0</span> s</div>
+    <canvas id="jeu" width="800" height="600"></canvas>
+    <div class="controles-mobiles">
+        <div class="groupe-boutons">
+            <button id="btn-gauche">◀</button>
+            <button id="btn-droite">▶</button>
+        </div>
+        <div class="groupe-boutons">
+            <button id="btn-bas">Frein</button>
+            <button id="btn-haut">Gaz</button>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById("jeu");
+        const ctx = canvas.getContext("2d");
+        const affichageChrono = document.getElementById("chrono");
+
+        const vehicule = {
+            x: 400,
+            y: 500,
+            angle: 0,
+            vitesse: 0,
+            vitesseMax: 6,
+            acceleration: 0.2,
+            friction: 0.96,
+            rotation: 0.06
+        };
+
+        const touches = {};
+        window.addEventListener("keydown", (e) => touches[e.key] = true);
+        window.addEventListener("keyup", (e) => touches[e.key] = false);
+
+        function lierBoutonTactile(idBouton, nomTouche) {
+            const bouton = document.getElementById(idBouton);
+            bouton.addEventListener("pointerdown", (e) => {
+                e.preventDefault();
+                touches[nomTouche] = true;
+            });
+            bouton.addEventListener("pointerup", () => touches[nomTouche] = false);
+            bouton.addEventListener("pointerleave", () => touches[nomTouche] = false);
+        }
+
+        lierBoutonTactile("btn-gauche", "ArrowLeft");
+        lierBoutonTactile("btn-droite", "ArrowRight");
+        lierBoutonTactile("btn-haut", "ArrowUp");
+        lierBoutonTactile("btn-bas", "ArrowDown");
+
+        let debutTemps = Date.now();
+
+        function dessinerCircuit() {
+            ctx.fillStyle = "#555";
+            ctx.beginPath();
+            ctx.ellipse(400, 300, 350, 240, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = "#4a7c59";
+            ctx.beginPath();
+            ctx.ellipse(400, 300, 210, 120, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(395, 420, 10, 120);
+        }
+
+        function estSurPiste(x, y) {
+            const ext = Math.pow((x - 400) / 350, 2) + Math.pow((y - 300) / 240, 2);
+            const int = Math.pow((x - 400) / 210, 2) + Math.pow((y - 300) / 120, 2);
+            return ext <= 1 && int >= 1;
+        }
+
+        function boucleJeu() {
+            if (touches["ArrowUp"]) vehicule.vitesse += vehicule.acceleration;
+            if (touches["ArrowDown"]) vehicule.vitesse -= vehicule.acceleration;
+
+            if (Math.abs(vehicule.vitesse) > 0.2) {
+                const sens = vehicule.vitesse > 0 ? 1 : -1;
+                if (touches["ArrowLeft"]) vehicule.angle -= vehicule.rotation * sens;
+                if (touches["ArrowRight"]) vehicule.angle += vehicule.rotation * sens;
+            }
+
+            vehicule.vitesse *= vehicule.friction;
+            const limiteVitesse = estSurPiste(vehicule.x, vehicule.y) ? vehicule.vitesseMax : 2;
+            if (vehicule.vitesse > limiteVitesse) vehicule.vitesse = limiteVitesse;
+
+            vehicule.x += Math.cos(vehicule.angle) * vehicule.vitesse;
+            vehicule.y += Math.sin(vehicule.angle) * vehicule.vitesse;
+
+            vehicule.x = Math.max(15, Math.min(canvas.width - 15, vehicule.x));
+            vehicule.y = Math.max(15, Math.min(canvas.height - 15, vehicule.y));
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            dessinerCircuit();
+
+            ctx.save();
+            ctx.translate(vehicule.x, vehicule.y);
+            ctx.rotate(vehicule.angle);
+            ctx.fillStyle = "#e63946";
+            ctx.fillRect(-15, -8, 30, 16);
+            ctx.fillStyle = "#ffd166";
+            ctx.fillRect(5, -6, 6, 12);
+            ctx.restore();
+
+            affichageChrono.textContent = ((Date.now() - debutTemps) / 1000).toFixed(1);
+            requestAnimationFrame(boucleJeu);
+        }
+
+        boucleJeu();
+    </script>
+</body>
+
+</html>
