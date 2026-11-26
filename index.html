@@ -227,22 +227,24 @@
         const btnReset = document.getElementById("btn-reset");
         const btnSon = document.getElementById("btn-son");
 
-        // --- Moteur audio Web Audio API (public "woueee" sur piste / "ouhhh" dans le gazon) ---
+        // --- Moteur audio Web Audio API (foule en délire "woueee" sur piste / "ouhhh" dans le gazon) ---
         let sonActif = true;
         let audioCtx = null;
-        let gainWoueee = null;
-        let filtreWoueee = null;
-        let lfoWoueee = null;
+        let compresseurSortie = null;
+        let gainWoueeePrincipal = null;
+        let gainWoueeeCris = null;
+        let filtreWoueeePrincipal = null;
+        let filtreWoueeeCris = null;
         let gainOuhhh = null;
         let filtreOuhhh = null;
-        let lfoOuhhh = null;
 
-        function creerTamponBruitRose(contexte) {
-            const dureeSecondes = 2;
+        function creerTamponBruitFoule(contexte) {
+            const dureeSecondes = 3;
             const taille = contexte.sampleRate * dureeSecondes;
             const tampon = contexte.createBuffer(1, taille, contexte.sampleRate);
             const donnees = tampon.getChannelData(0);
             let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+
             for (let i = 0; i < taille; i++) {
                 const blanc = Math.random() * 2 - 1;
                 b0 = 0.99886 * b0 + blanc * 0.0555179;
@@ -251,10 +253,28 @@
                 b3 = 0.86650 * b3 + blanc * 0.3104856;
                 b4 = 0.55000 * b4 + blanc * 0.5329522;
                 b5 = -0.7616 * b5 - blanc * 0.0168980;
-                donnees[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + blanc * 0.5362) * 0.04;
+                const rose = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + blanc * 0.5362) * 0.25;
                 b6 = blanc * 0.115926;
+
+                // Légère texture granuleuse pour imiter des voix multiples
+                const grain = Math.sin(i * 0.013) * 0.12;
+                donnees[i] = Math.max(-1, Math.min(1, rose + grain * blanc));
             }
             return tampon;
+        }
+
+        function jouerBipConfirmation(freq = 640) {
+            if (!audioCtx || audioCtx.state !== "running" || !sonActif || !compresseurSortie) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.14, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
+            osc.connect(gain);
+            gain.connect(compresseurSortie);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
         }
 
         function initialiserAudioPublic() {
@@ -263,51 +283,88 @@
             if (!AudioContextCtor) return;
 
             audioCtx = new AudioContextCtor();
-            const bruit = creerTamponBruitRose(audioCtx);
+            const bruit = creerTamponBruitFoule(audioCtx);
 
-            // Canal 1 : "Woueee" enthousiaste quand on roule vite sur le circuit
-            const sourceWoueee = audioCtx.createBufferSource();
-            sourceWoueee.buffer = bruit;
-            sourceWoueee.loop = true;
+            // Limiteur / compresseur pour garder une foule puissante sans écrêtage brutal
+            compresseurSortie = audioCtx.createDynamicsCompressor();
+            compresseurSortie.threshold.value = -14;
+            compresseurSortie.knee.value = 18;
+            compresseurSortie.ratio.value = 6;
+            compresseurSortie.attack.value = 0.008;
+            compresseurSortie.release.value = 0.18;
+            compresseurSortie.connect(audioCtx.destination);
 
-            filtreWoueee = audioCtx.createBiquadFilter();
-            filtreWoueee.type = "bandpass";
-            filtreWoueee.frequency.value = 540;
-            filtreWoueee.Q.value = 2.2;
+            // 1. Couche "Woueee" principale (foule enthousiaste sur la piste)
+            const sourceWoueee1 = audioCtx.createBufferSource();
+            sourceWoueee1.buffer = bruit;
+            sourceWoueee1.loop = true;
 
-            lfoWoueee = audioCtx.createOscillator();
-            lfoWoueee.type = "sine";
-            lfoWoueee.frequency.value = 3.2;
-            const gainLfoWoueee = audioCtx.createGain();
-            gainLfoWoueee.gain.value = 140;
-            lfoWoueee.connect(gainLfoWoueee);
-            gainLfoWoueee.connect(filtreWoueee.frequency);
+            filtreWoueeePrincipal = audioCtx.createBiquadFilter();
+            filtreWoueeePrincipal.type = "bandpass";
+            filtreWoueeePrincipal.frequency.value = 780;
+            filtreWoueeePrincipal.Q.value = 1.35;
 
-            gainWoueee = audioCtx.createGain();
-            gainWoueee.gain.value = 0;
+            const lfoWoueee1 = audioCtx.createOscillator();
+            lfoWoueee1.type = "sine";
+            lfoWoueee1.frequency.value = 5.2;
+            const gainLfo1 = audioCtx.createGain();
+            gainLfo1.gain.value = 320;
+            lfoWoueee1.connect(gainLfo1);
+            gainLfo1.connect(filtreWoueeePrincipal.frequency);
 
-            sourceWoueee.connect(filtreWoueee);
-            filtreWoueee.connect(gainWoueee);
-            gainWoueee.connect(audioCtx.destination);
+            gainWoueeePrincipal = audioCtx.createGain();
+            gainWoueeePrincipal.gain.value = 0;
 
-            sourceWoueee.start();
-            lfoWoueee.start();
+            sourceWoueee1.connect(filtreWoueeePrincipal);
+            filtreWoueeePrincipal.connect(gainWoueeePrincipal);
+            gainWoueeePrincipal.connect(compresseurSortie);
 
-            // Canal 2 : "Ouhhh" grave et traînant quand on sort dans le gazon
+            sourceWoueee1.start();
+            lfoWoueee1.start();
+
+            // 2. Couche "Cris / clameur" (donne l'effet foule en délire quand on accélère)
+            const sourceWoueee2 = audioCtx.createBufferSource();
+            sourceWoueee2.buffer = bruit;
+            sourceWoueee2.loop = true;
+
+            filtreWoueeeCris = audioCtx.createBiquadFilter();
+            filtreWoueeeCris.type = "bandpass";
+            filtreWoueeeCris.frequency.value = 1480;
+            filtreWoueeeCris.Q.value = 1.6;
+
+            const lfoWoueee2 = audioCtx.createOscillator();
+            lfoWoueee2.type = "triangle";
+            lfoWoueee2.frequency.value = 7.8;
+            const gainLfo2 = audioCtx.createGain();
+            gainLfo2.gain.value = 420;
+            lfoWoueee2.connect(gainLfo2);
+            gainLfo2.connect(filtreWoueeeCris.frequency);
+
+            gainWoueeeCris = audioCtx.createGain();
+            gainWoueeeCris.gain.value = 0;
+
+            sourceWoueee2.connect(filtreWoueeeCris);
+            filtreWoueeeCris.connect(gainWoueeeCris);
+            gainWoueeeCris.connect(compresseurSortie);
+
+            sourceWoueee2.start();
+            lfoWoueee2.start();
+
+            // 3. Couche "Ouhhh" (réaction grave et marquée dans le gazon)
             const sourceOuhhh = audioCtx.createBufferSource();
             sourceOuhhh.buffer = bruit;
             sourceOuhhh.loop = true;
 
             filtreOuhhh = audioCtx.createBiquadFilter();
             filtreOuhhh.type = "lowpass";
-            filtreOuhhh.frequency.value = 250;
-            filtreOuhhh.Q.value = 3.5;
+            filtreOuhhh.frequency.value = 230;
+            filtreOuhhh.Q.value = 4.2;
 
-            lfoOuhhh = audioCtx.createOscillator();
+            const lfoOuhhh = audioCtx.createOscillator();
             lfoOuhhh.type = "sine";
-            lfoOuhhh.frequency.value = 1.6;
+            lfoOuhhh.frequency.value = 2.1;
             const gainLfoOuhhh = audioCtx.createGain();
-            gainLfoOuhhh.gain.value = 45;
+            gainLfoOuhhh.gain.value = 65;
             lfoOuhhh.connect(gainLfoOuhhh);
             gainLfoOuhhh.connect(filtreOuhhh.frequency);
 
@@ -316,7 +373,7 @@
 
             sourceOuhhh.connect(filtreOuhhh);
             filtreOuhhh.connect(gainOuhhh);
-            gainOuhhh.connect(audioCtx.destination);
+            gainOuhhh.connect(compresseurSortie);
 
             sourceOuhhh.start();
             lfoOuhhh.start();
@@ -329,28 +386,39 @@
         }
 
         function couperSonsPublic() {
-            if (!audioCtx || !gainWoueee || !gainOuhhh) return;
+            if (!audioCtx || !gainWoueeePrincipal || !gainWoueeeCris || !gainOuhhh) return;
             const maintenant = audioCtx.currentTime;
-            gainWoueee.gain.setTargetAtTime(0, maintenant, 0.05);
-            gainOuhhh.gain.setTargetAtTime(0, maintenant, 0.05);
+            gainWoueeePrincipal.gain.setTargetAtTime(0, maintenant, 0.04);
+            gainWoueeeCris.gain.setTargetAtTime(0, maintenant, 0.04);
+            gainOuhhh.gain.setTargetAtTime(0, maintenant, 0.04);
         }
 
         function mettreAJourAmbiancePublic(surPiste, vitesseAbsolue) {
-            if (!sonActif || !audioCtx || audioCtx.state !== "running" || !gainWoueee || !gainOuhhh) {
+            if (!sonActif || !audioCtx || audioCtx.state !== "running" || !gainWoueeePrincipal || !gainWoueeeCris || !gainOuhhh) {
                 return;
             }
 
             const maintenant = audioCtx.currentTime;
-            const enMouvement = vitesseAbsolue > 0.4;
-            const rouleViteSurPiste = surPiste && vitesseAbsolue > 2.0;
+            const enMouvement = vitesseAbsolue > 0.25;
+            const surCircuit = surPiste && vitesseAbsolue > 0.8;
 
-            const cibleWoueee = rouleViteSurPiste
-                ? Math.min(0.28, ((vitesseAbsolue - 2.0) / 4.0) * 0.28)
-                : 0;
-            const cibleOuhhh = (!surPiste && enMouvement) ? 0.26 : 0;
+            // Montée progressive avec la vitesse : foule en délire dès qu'on appuie sur Gaz
+            const intensiteVitesse = Math.min(1, Math.max(0.35, vitesseAbsolue / 5.5));
+            const cibleWoueee = surCircuit ? 0.95 * intensiteVitesse : 0;
+            const cibleCris = (surCircuit && vitesseAbsolue > 2.2) ? 0.72 * intensiteVitesse : 0;
+            const cibleOuhhh = (!surPiste && enMouvement) ? 0.88 : 0;
 
-            gainWoueee.gain.setTargetAtTime(cibleWoueee, maintenant, 0.09);
-            gainOuhhh.gain.setTargetAtTime(cibleOuhhh, maintenant, 0.09);
+            gainWoueeePrincipal.gain.setTargetAtTime(cibleWoueee, maintenant, 0.06);
+            gainWoueeeCris.gain.setTargetAtTime(cibleCris, maintenant, 0.06);
+            gainOuhhh.gain.setTargetAtTime(cibleOuhhh, maintenant, 0.06);
+        }
+
+        async function activerAudioSiBesoin() {
+            if (!sonActif) return;
+            initialiserAudioPublic();
+            if (audioCtx && audioCtx.state === "suspended") {
+                await audioCtx.resume();
+            }
         }
 
         if (btnSon) {
@@ -359,10 +427,8 @@
                 mettreAJourBoutonSon();
 
                 if (sonActif) {
-                    initialiserAudioPublic();
-                    if (audioCtx && audioCtx.state === "suspended") {
-                        await audioCtx.resume();
-                    }
+                    await activerAudioSiBesoin();
+                    jouerBipConfirmation(680);
                 } else {
                     couperSonsPublic();
                 }
@@ -370,19 +436,11 @@
         }
 
         window.addEventListener("pointerdown", () => {
-            if (!sonActif) return;
-            initialiserAudioPublic();
-            if (audioCtx && audioCtx.state === "suspended") {
-                audioCtx.resume();
-            }
+            activerAudioSiBesoin();
         }, { passive: true });
 
         window.addEventListener("keydown", () => {
-            if (!sonActif) return;
-            initialiserAudioPublic();
-            if (audioCtx && audioCtx.state === "suspended") {
-                audioCtx.resume();
-            }
+            activerAudioSiBesoin();
         }, { passive: true });
         // --- Fin moteur audio ---
 
