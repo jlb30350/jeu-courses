@@ -136,6 +136,11 @@
             border-radius: 8px;
         }
 
+        .btn-hud.muet {
+            background: #6b2d2d;
+            border-color: #f4a261;
+        }
+
         /* Masquer les manettes tactiles sur grand écran PC sans pointeur grossier */
         @media (min-width: 901px) and (hover: hover) and (pointer: fine) {
             .controles-mobiles {
@@ -191,6 +196,7 @@
             <div>Record : <span id="record">--.-</span> s</div>
         </div>
         <div class="actions-hud">
+            <button type="button" id="btn-son" class="btn-hud">Son : ON</button>
             <button type="button" id="btn-reset" class="btn-hud">Recommencer</button>
             <button type="button" id="btn-fullscreen" class="btn-hud">Plein écran</button>
         </div>
@@ -219,6 +225,166 @@
         const affichageRecord = document.getElementById("record");
         const btnFullscreen = document.getElementById("btn-fullscreen");
         const btnReset = document.getElementById("btn-reset");
+        const btnSon = document.getElementById("btn-son");
+
+        // --- Moteur audio Web Audio API (public "woueee" sur piste / "ouhhh" dans le gazon) ---
+        let sonActif = true;
+        let audioCtx = null;
+        let gainWoueee = null;
+        let filtreWoueee = null;
+        let lfoWoueee = null;
+        let gainOuhhh = null;
+        let filtreOuhhh = null;
+        let lfoOuhhh = null;
+
+        function creerTamponBruitRose(contexte) {
+            const dureeSecondes = 2;
+            const taille = contexte.sampleRate * dureeSecondes;
+            const tampon = contexte.createBuffer(1, taille, contexte.sampleRate);
+            const donnees = tampon.getChannelData(0);
+            let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+            for (let i = 0; i < taille; i++) {
+                const blanc = Math.random() * 2 - 1;
+                b0 = 0.99886 * b0 + blanc * 0.0555179;
+                b1 = 0.99332 * b1 + blanc * 0.0750759;
+                b2 = 0.96900 * b2 + blanc * 0.1538520;
+                b3 = 0.86650 * b3 + blanc * 0.3104856;
+                b4 = 0.55000 * b4 + blanc * 0.5329522;
+                b5 = -0.7616 * b5 - blanc * 0.0168980;
+                donnees[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + blanc * 0.5362) * 0.04;
+                b6 = blanc * 0.115926;
+            }
+            return tampon;
+        }
+
+        function initialiserAudioPublic() {
+            if (audioCtx) return;
+            const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextCtor) return;
+
+            audioCtx = new AudioContextCtor();
+            const bruit = creerTamponBruitRose(audioCtx);
+
+            // Canal 1 : "Woueee" enthousiaste quand on roule vite sur le circuit
+            const sourceWoueee = audioCtx.createBufferSource();
+            sourceWoueee.buffer = bruit;
+            sourceWoueee.loop = true;
+
+            filtreWoueee = audioCtx.createBiquadFilter();
+            filtreWoueee.type = "bandpass";
+            filtreWoueee.frequency.value = 540;
+            filtreWoueee.Q.value = 2.2;
+
+            lfoWoueee = audioCtx.createOscillator();
+            lfoWoueee.type = "sine";
+            lfoWoueee.frequency.value = 3.2;
+            const gainLfoWoueee = audioCtx.createGain();
+            gainLfoWoueee.gain.value = 140;
+            lfoWoueee.connect(gainLfoWoueee);
+            gainLfoWoueee.connect(filtreWoueee.frequency);
+
+            gainWoueee = audioCtx.createGain();
+            gainWoueee.gain.value = 0;
+
+            sourceWoueee.connect(filtreWoueee);
+            filtreWoueee.connect(gainWoueee);
+            gainWoueee.connect(audioCtx.destination);
+
+            sourceWoueee.start();
+            lfoWoueee.start();
+
+            // Canal 2 : "Ouhhh" grave et traînant quand on sort dans le gazon
+            const sourceOuhhh = audioCtx.createBufferSource();
+            sourceOuhhh.buffer = bruit;
+            sourceOuhhh.loop = true;
+
+            filtreOuhhh = audioCtx.createBiquadFilter();
+            filtreOuhhh.type = "lowpass";
+            filtreOuhhh.frequency.value = 250;
+            filtreOuhhh.Q.value = 3.5;
+
+            lfoOuhhh = audioCtx.createOscillator();
+            lfoOuhhh.type = "sine";
+            lfoOuhhh.frequency.value = 1.6;
+            const gainLfoOuhhh = audioCtx.createGain();
+            gainLfoOuhhh.gain.value = 45;
+            lfoOuhhh.connect(gainLfoOuhhh);
+            gainLfoOuhhh.connect(filtreOuhhh.frequency);
+
+            gainOuhhh = audioCtx.createGain();
+            gainOuhhh.gain.value = 0;
+
+            sourceOuhhh.connect(filtreOuhhh);
+            filtreOuhhh.connect(gainOuhhh);
+            gainOuhhh.connect(audioCtx.destination);
+
+            sourceOuhhh.start();
+            lfoOuhhh.start();
+        }
+
+        function mettreAJourBoutonSon() {
+            if (!btnSon) return;
+            btnSon.textContent = sonActif ? "Son : ON" : "Son : MUET";
+            btnSon.classList.toggle("muet", !sonActif);
+        }
+
+        function couperSonsPublic() {
+            if (!audioCtx || !gainWoueee || !gainOuhhh) return;
+            const maintenant = audioCtx.currentTime;
+            gainWoueee.gain.setTargetAtTime(0, maintenant, 0.05);
+            gainOuhhh.gain.setTargetAtTime(0, maintenant, 0.05);
+        }
+
+        function mettreAJourAmbiancePublic(surPiste, vitesseAbsolue) {
+            if (!sonActif || !audioCtx || audioCtx.state !== "running" || !gainWoueee || !gainOuhhh) {
+                return;
+            }
+
+            const maintenant = audioCtx.currentTime;
+            const enMouvement = vitesseAbsolue > 0.4;
+            const rouleViteSurPiste = surPiste && vitesseAbsolue > 2.0;
+
+            const cibleWoueee = rouleViteSurPiste
+                ? Math.min(0.28, ((vitesseAbsolue - 2.0) / 4.0) * 0.28)
+                : 0;
+            const cibleOuhhh = (!surPiste && enMouvement) ? 0.26 : 0;
+
+            gainWoueee.gain.setTargetAtTime(cibleWoueee, maintenant, 0.09);
+            gainOuhhh.gain.setTargetAtTime(cibleOuhhh, maintenant, 0.09);
+        }
+
+        if (btnSon) {
+            btnSon.addEventListener("click", async () => {
+                sonActif = !sonActif;
+                mettreAJourBoutonSon();
+
+                if (sonActif) {
+                    initialiserAudioPublic();
+                    if (audioCtx && audioCtx.state === "suspended") {
+                        await audioCtx.resume();
+                    }
+                } else {
+                    couperSonsPublic();
+                }
+            });
+        }
+
+        window.addEventListener("pointerdown", () => {
+            if (!sonActif) return;
+            initialiserAudioPublic();
+            if (audioCtx && audioCtx.state === "suspended") {
+                audioCtx.resume();
+            }
+        }, { passive: true });
+
+        window.addEventListener("keydown", () => {
+            if (!sonActif) return;
+            initialiserAudioPublic();
+            if (audioCtx && audioCtx.state === "suspended") {
+                audioCtx.resume();
+            }
+        }, { passive: true });
+        // --- Fin moteur audio ---
 
         const CLE_RECORD = "prototype_course_meilleur_tour_v1";
         let meilleurTour = parseFloat(localStorage.getItem(CLE_RECORD));
@@ -258,6 +424,7 @@
             debutTourTemps = Date.now();
             affichageChrono.textContent = "0.0";
             affichageTour.textContent = "0";
+            couperSonsPublic();
         }
 
         if (btnReset) {
@@ -271,6 +438,7 @@
             for (const cle in touches) {
                 touches[cle] = false;
             }
+            couperSonsPublic();
         });
 
         function lierBoutonTactile(idBouton, nomTouche) {
@@ -366,7 +534,6 @@
                 aPasseMoitieHaute = true;
             }
 
-            // Ligne d'arrivée située en bas au centre : x = 400, y entre 420 et 540
             const dansZoneLigneY = vehicule.y >= 420 && vehicule.y <= 540;
             const franchitLigne = (precedentX < 400 && vehicule.x >= 400) || (precedentX > 400 && vehicule.x <= 400);
 
@@ -412,6 +579,7 @@
 
             verifierPassageLigne();
             canvas.classList.toggle("hors-piste", !surPiste);
+            mettreAJourAmbiancePublic(surPiste, Math.abs(vehicule.vitesse));
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             dessinerCircuit();
