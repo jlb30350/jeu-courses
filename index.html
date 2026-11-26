@@ -55,6 +55,11 @@
             flex-shrink: 0;
         }
 
+        .actions-hud {
+            display: flex;
+            gap: 8px;
+        }
+
         .zone-circuit {
             flex: 1;
             width: 100%;
@@ -71,9 +76,10 @@
             border-radius: 6px;
             background: #4a7c59;
             width: 100%;
-            height: 100%;
             max-width: 100%;
             max-height: 100%;
+            height: auto;
+            aspect-ratio: 4 / 3;
             object-fit: contain;
         }
 
@@ -111,10 +117,25 @@
             background: #e63946;
         }
 
-        #btn-fullscreen {
+        .btn-hud {
             padding: 6px 12px;
             font-size: 13px;
             border-radius: 8px;
+        }
+
+        @media (orientation: portrait) {
+            .zone-circuit {
+                flex: 0 1 auto;
+                padding: 8px 0;
+            }
+
+            canvas {
+                width: 92vw;
+                max-width: 540px;
+                max-height: 46dvh;
+                height: auto;
+                aspect-ratio: 4 / 3;
+            }
         }
 
         @media (max-height: 500px) and (orientation: landscape) {
@@ -134,7 +155,7 @@
                 border-radius: 10px;
             }
 
-            #btn-fullscreen {
+            .btn-hud {
                 padding: 5px 10px;
                 font-size: 12px;
             }
@@ -145,7 +166,10 @@
 <body>
     <div class="barre-hud">
         <div>Temps : <span id="chrono">0.0</span> s</div>
-        <button type="button" id="btn-fullscreen">Plein écran</button>
+        <div class="actions-hud">
+            <button type="button" id="btn-reset" class="btn-hud">Recommencer</button>
+            <button type="button" id="btn-fullscreen" class="btn-hud">Plein écran</button>
+        </div>
     </div>
 
     <div class="zone-circuit">
@@ -168,6 +192,7 @@
         const ctx = canvas.getContext("2d");
         const affichageChrono = document.getElementById("chrono");
         const btnFullscreen = document.getElementById("btn-fullscreen");
+        const btnReset = document.getElementById("btn-reset");
 
         const vehicule = {
             x: 400,
@@ -179,6 +204,21 @@
             friction: 0.96,
             rotation: 0.06
         };
+
+        let debutTemps = Date.now();
+
+        function reinitialiserCourse() {
+            vehicule.x = 400;
+            vehicule.y = 500;
+            vehicule.angle = 0;
+            vehicule.vitesse = 0;
+            debutTemps = Date.now();
+            affichageChrono.textContent = "0.0";
+        }
+
+        if (btnReset) {
+            btnReset.addEventListener("click", reinitialiserCourse);
+        }
 
         const touches = {};
         window.addEventListener("keydown", (e) => touches[e.key] = true);
@@ -256,8 +296,6 @@
             mettreAJourLibelleFullscreen();
         });
 
-        let debutTemps = Date.now();
-
         function dessinerCircuit() {
             ctx.fillStyle = "#555";
             ctx.beginPath();
@@ -302,9 +340,12 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             dessinerCircuit();
 
+            const echelleVoiture = window.innerWidth <= 768 ? 1.65 : 1.25;
+
             ctx.save();
             ctx.translate(vehicule.x, vehicule.y);
             ctx.rotate(vehicule.angle);
+            ctx.scale(echelleVoiture, echelleVoiture);
             ctx.fillStyle = "#e63946";
             ctx.fillRect(-15, -8, 30, 16);
             ctx.fillStyle = "#ffd166";
